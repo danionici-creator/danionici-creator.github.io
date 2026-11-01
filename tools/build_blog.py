@@ -1,8 +1,8 @@
 """Builds the deployable site into _site/: copies the static pages and adds a blog made of the Substack posts
 listed in blog/posts.json that are already public.
 
-Each post body is read from Substack's public API at build time, so a post appears here only once Substack has
-published it (scheduled posts answer 404 until then). Standard library only. Run from the repository root:
+Each post body is read from the publication's RSS feed at build time (Substack refuses its JSON API to GitHub's
+servers), so a post appears here only once Substack has published it: scheduled posts are not in the feed. Standard library only. Run from the repository root:
 
     python tools/build_blog.py
 """
@@ -11,9 +11,10 @@ import json
 import re
 import shutil
 import sys
-import urllib.error
 import urllib.request
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -76,15 +77,20 @@ def clean(body):
     return re.sub(r'<p>\s*</p>', '', ''.join(c.out))
 
 
-def fetch(slug):
-    req = urllib.request.Request(f'{SUBSTACK}/api/v1/posts/{slug}', headers={'User-Agent': 'site-build (+' + BASE + ')'})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return json.loads(r.read().decode('utf-8'))
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return None  # not published yet
-        raise
+def feed():
+    """Published posts by slug, from the RSS feed (title, subtitle, date and full body)."""
+    req = urllib.request.Request(f'{SUBSTACK}/feed', headers={'User-Agent': 'Mozilla/5.0 (site-build; +' + BASE + ')'})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        root = ET.fromstring(r.read())
+    ns = {'content': 'http://purl.org/rss/1.0/modules/content/'}
+    posts = {}
+    for i in root.iter('item'):
+        slug = i.findtext('link', '').rstrip('/').rsplit('/p/', 1)[-1]
+        posts[slug] = {'title': html.unescape(i.findtext('title', '')),
+                       'subtitle': html.unescape(i.findtext('description', '')),
+                       'post_date': parsedate_to_datetime(i.findtext('pubDate')).isoformat(),
+                       'body_html': i.findtext('content:encoded', '', ns)}
+    return posts
 
 
 def ro_date(iso):
@@ -130,17 +136,18 @@ def main():
         (shutil.copytree if p.is_dir() else shutil.copy2)(p, OUT / p.name)
     CSS = css()
     listing = json.loads((ROOT / 'blog' / 'posts.json').read_text(encoding='utf-8'))
+    published = feed()
     posts = []
     for item in listing:
-        d = fetch(item['slug'])
-        if not d or d.get('audience') != 'everyone' or not d.get('body_html'):
+        d = published.get(item['slug'])
+        if not d or not d['body_html']:
             print('not public yet:', item['slug'])
             continue
         human, iso = ro_date(d['post_date'])
         body = clean(d['body_html'])
         # a heading that repeats the title would show it twice under the page's own h1
         body = re.sub(r'<h[2-4]>\s*' + re.escape(html.escape(d['title'], quote=False)) + r'\s*</h[2-4]>', '', body, count=1)
-        posts.append(dict(item, title=d['title'], subtitle=d.get('subtitle') or '', date=human, iso=iso, body=body))
+        posts.append(dict(item, title=d['title'], subtitle=d['subtitle'], date=human, iso=iso, body=body))
     posts.sort(key=lambda p: p['iso'], reverse=True)
     for p in posts:
         url = f'{BASE}/blog/{p["slug"]}/'
