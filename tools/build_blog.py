@@ -1,8 +1,9 @@
 """Builds the deployable site into _site/: copies the static pages and adds a blog made of the Substack posts
 listed in blog/posts.json that are already public.
 
-Each post body is read from the publication's RSS feed at build time (Substack refuses its JSON API to GitHub's
-servers), so a post appears here only once Substack has published it: scheduled posts are not in the feed. Standard library only. Run from the repository root:
+Each post body is read from the publication's RSS feed, so a post appears here only once Substack has published it
+(scheduled posts are not in the feed), and saved in blog/cache/. Substack refuses the feed to GitHub's servers, so
+there the build uses the saved copies; run this script locally and commit blog/cache/ to add new posts. Standard library only. Run from the repository root:
 
     python tools/build_blog.py
 """
@@ -136,10 +137,21 @@ def main():
         (shutil.copytree if p.is_dir() else shutil.copy2)(p, OUT / p.name)
     CSS = css()
     listing = json.loads((ROOT / 'blog' / 'posts.json').read_text(encoding='utf-8'))
-    published = feed()
+    try:
+        published = feed()
+    except Exception as e:  # Substack blocks datacenter addresses: fall back to the saved copies
+        print('feed unavailable, using blog/cache:', e)
+        published = {}
+    cache = ROOT / 'blog' / 'cache'
+    cache.mkdir(exist_ok=True)
     posts = []
     for item in listing:
+        saved = cache / f'{item["slug"]}.json'
         d = published.get(item['slug'])
+        if d and d['body_html']:
+            saved.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding='utf-8')
+        elif saved.exists():
+            d = json.loads(saved.read_text(encoding='utf-8'))
         if not d or not d['body_html']:
             print('not public yet:', item['slug'])
             continue
