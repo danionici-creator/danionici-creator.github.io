@@ -3,12 +3,15 @@ listed in blog/posts.json that are already public.
 
 Each post body is read from the publication's RSS feed, so a post appears here only once Substack has published it
 (scheduled posts are not in the feed), and saved in blog/cache/. Substack refuses the feed to GitHub's servers, so
-there the build uses the saved copies; run this script locally and commit blog/cache/ to add new posts. Standard library only. Run from the repository root:
+there the build uses the saved copies. Posts scheduled on Substack are kept encrypted in blog/sealed/ (see
+seal_posts.py) and are opened only once their publication time has passed, with the key in the BLOG_KEY environment
+variable, so they appear on schedule without anyone running anything. Run from the repository root:
 
     python tools/build_blog.py
 """
 import html
 import json
+import os
 import re
 import shutil
 import sys
@@ -94,6 +97,18 @@ def feed():
     return posts
 
 
+def unseal(slug):
+    """A scheduled post whose time has come, or None (not due yet, not sealed, or no key)."""
+    sealed = ROOT / 'blog' / 'sealed' / f'{slug}.bin'
+    key = os.environ.get('BLOG_KEY', '').strip()
+    if not sealed.exists() or not key:
+        return None
+    from cryptography.fernet import Fernet
+    d = json.loads(Fernet(key.encode()).decrypt(sealed.read_bytes()).decode('utf-8'))
+    due = datetime.fromisoformat(d['post_date'].replace('Z', '+00:00'))
+    return d if due <= datetime.now(timezone.utc) else None
+
+
 def ro_date(iso):
     d = datetime.fromisoformat(iso.replace('Z', '+00:00')).astimezone(TZ)
     return f'{d.day} {MONTHS[d.month - 1]} {d.year}', d.date().isoformat()
@@ -152,6 +167,8 @@ def main():
             saved.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding='utf-8')
         elif saved.exists():
             d = json.loads(saved.read_text(encoding='utf-8'))
+        else:
+            d = unseal(item['slug'])
         if not d or not d['body_html']:
             print('not public yet:', item['slug'])
             continue
@@ -159,8 +176,8 @@ def main():
         body = clean(d['body_html'])
         # a heading that repeats the title would show it twice under the page's own h1
         body = re.sub(r'<h[2-4]>\s*' + re.escape(html.escape(d['title'], quote=False)) + r'\s*</h[2-4]>', '', body, count=1)
-        posts.append(dict(item, title=d['title'], subtitle=d['subtitle'], date=human, iso=iso, body=body))
-    posts.sort(key=lambda p: p['iso'], reverse=True)
+        posts.append(dict(item, title=d['title'], subtitle=d['subtitle'], date=human, iso=iso, ts=d['post_date'], body=body))
+    posts.sort(key=lambda p: datetime.fromisoformat(p['ts'].replace('Z', '+00:00')), reverse=True)
     for p in posts:
         url = f'{BASE}/blog/{p["slug"]}/'
         ld = json.dumps({'@context': 'https://schema.org', '@type': 'BlogPosting', 'headline': p['title'], 'datePublished': p['iso'],

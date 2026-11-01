@@ -24,7 +24,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - run: pip install cryptography==49.0.0
       - run: python tools/build_blog.py
+        env:
+          BLOG_KEY: ${{ secrets.BLOG_KEY }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
