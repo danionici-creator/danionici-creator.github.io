@@ -1,0 +1,24 @@
+name: Keep scheduled builds alive
+
+# GitHub disables scheduled workflows in a repository with no commits for 60 days; a monthly commit to
+# blog/.keepalive keeps the daily blog build running. The file is not part of the published site.
+on:
+  schedule:
+    - cron: '0 6 1 * *'   # the 1st of every month
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          date -u +%Y-%m-%d > blog/.keepalive
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add blog/.keepalive
+          git commit -m 'Keep scheduled builds alive' || exit 0
+          git push
