@@ -28,6 +28,13 @@ BASE = 'https://danionici-creator.github.io'
 SUBSTACK = 'https://ioandanielionici.substack.com'
 ORCID = 'https://orcid.org/0009-0009-8183-3656'
 SKIP = {'_site', 'tools', '.github', '.git', 'blog'}
+GOATCOUNTER = 'untimpallor'  # account code at goatcounter.com; empty: no visit counting
+NOTE = {'ro': 'Vizitele sunt numărate anonim, fără cookie-uri (GoatCounter).',
+        'en': 'Visits are counted anonymously, without cookies (GoatCounter).'}
+# outbound links are counted as events named after their address, so the dashboard shows which links readers follow
+CLICKS = ('<script>document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a[href^=http]");'
+          'if(a&&a.host!==location.host&&window.goatcounter&&goatcounter.count)'
+          'goatcounter.count({path:a.href,title:a.textContent.trim().slice(0,80),event:true})})</script>')
 MONTHS = ['ianuarie', 'februarie', 'martie', 'aprilie', 'mai', 'iunie', 'iulie', 'august', 'septembrie',
           'octombrie', 'noiembrie', 'decembrie']
 
@@ -141,6 +148,20 @@ def page(title, desc, canon, body, depth, extra_head=''):
 </body></html>'''
 
 
+def count_visits():
+    """Adds the GoatCounter script, outbound-click counting and a one-line notice to every page of _site."""
+    tag = (f'<script data-goatcounter="https://{GOATCOUNTER}.goatcounter.com/count" async '
+           f'src="https://gc.zgo.at/count.js"></script>' + CLICKS)
+    for f in OUT.rglob('*.html'):
+        page = f.read_text(encoding='utf-8')
+        if '</body>' not in page or f.name.startswith('google'):
+            continue
+        lang = 'en' if '<html lang="en"' in page else 'ro'
+        if '</footer>' in page:
+            page = page.replace('</footer>', f'<p>{NOTE[lang]}</p></footer>', 1)
+        f.write_text(page.replace('</body>', tag + '</body>', 1), encoding='utf-8')
+
+
 def main():
     global CSS
     if OUT.exists():
@@ -203,6 +224,8 @@ def main():
     urls = [f'{BASE}/', f'{BASE}/ro/', f'{BASE}/series.html', f'{BASE}/blog/'] + [f'{BASE}/blog/{p["slug"]}/' for p in posts]
     (OUT / 'sitemap.xml').write_text('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
                                      + ''.join(f'  <url><loc>{u}</loc></url>\n' for u in urls) + '</urlset>\n', encoding='utf-8')
+    if GOATCOUNTER:
+        count_visits()
     print(f'built {len(posts)} posts:', ', '.join(p['slug'] for p in posts))
 
 
