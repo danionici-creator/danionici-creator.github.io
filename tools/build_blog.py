@@ -28,6 +28,7 @@ BASE = 'https://danionici-creator.github.io'
 SUBSTACK = 'https://ioandanielionici.substack.com'
 ORCID = 'https://orcid.org/0009-0009-8183-3656'
 SKIP = {'_site', 'tools', '.github', '.git', 'blog'}
+SITE_NAME = 'Ioan Daniel Ionici'
 GOATCOUNTER = 'untimpallor'  # account code at goatcounter.com; empty: no visit counting
 NOTE = {'ro': 'Vizitele sunt numărate anonim, fără cookie-uri (GoatCounter).',
         'en': 'Visits are counted anonymously, without cookies (GoatCounter).'}
@@ -148,6 +149,21 @@ def page(title, desc, canon, body, depth, extra_head=''):
 </body></html>'''
 
 
+def name_site():
+    """Tells search engines the site's name (they otherwise show the host, "GitHub"): og:site_name on every page and
+    a schema.org WebSite on the home pages."""
+    ld = json.dumps({'@context': 'https://schema.org', '@type': 'WebSite', 'name': SITE_NAME,
+                     'alternateName': ['danionici-creator.github.io'], 'url': f'{BASE}/'}, ensure_ascii=False)
+    for f in OUT.rglob('*.html'):
+        page = f.read_text(encoding='utf-8')
+        if '</head>' not in page or 'og:site_name' in page:
+            continue
+        extra = f'<meta property="og:site_name" content="{SITE_NAME}">'
+        if f in (OUT / 'index.html', OUT / 'ro' / 'index.html'):
+            extra += f'<script type="application/ld+json">{ld}</script>'
+        f.write_text(page.replace('</head>', extra + '</head>', 1), encoding='utf-8')
+
+
 def count_visits():
     """Adds the GoatCounter script, outbound-click counting and a one-line notice to every page of _site."""
     tag = (f'<script data-goatcounter="https://{GOATCOUNTER}.goatcounter.com/count" async '
@@ -224,6 +240,7 @@ def main():
     urls = [f'{BASE}/', f'{BASE}/ro/', f'{BASE}/series.html', f'{BASE}/blog/'] + [f'{BASE}/blog/{p["slug"]}/' for p in posts]
     (OUT / 'sitemap.xml').write_text('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
                                      + ''.join(f'  <url><loc>{u}</loc></url>\n' for u in urls) + '</urlset>\n', encoding='utf-8')
+    name_site()
     if GOATCOUNTER:
         count_visits()
     print(f'built {len(posts)} posts:', ', '.join(p['slug'] for p in posts))
