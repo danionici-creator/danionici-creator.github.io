@@ -4,6 +4,8 @@
   {"slug": "cine-tine-ceasul", "series": "Prima serie · 2/5"},
   {"slug": "povestea-unui-avantaj-care-a-disparut", "series": "Prima serie · 3/5"},
   {"slug": "un-test-de-eliminare", "series": "Prima serie · 4/5"},
+  {"slug": "agenti-suverani-fara-trecut", "series": "Text separat de serie"},
+  {"slug": "sovereign-agents-without-a-past", "series": "Standalone essay · in English", "lang": "en"},
   {"slug": "intre-senzatie-si-realitate", "series": "Prima serie · 5/5"},
   {"slug": "glosar-cum-functioneaza-un-llm", "series": "Cum funcționează un LLM · glosar"},
   {"slug": "cum-functioneaza-un-llm-1-modelul", "series": "Cum funcționează un LLM · 1/6"},

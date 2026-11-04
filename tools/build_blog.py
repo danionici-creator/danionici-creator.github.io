@@ -218,11 +218,14 @@ def main():
     for p in posts:
         url = f'{BASE}/blog/{p["slug"]}/'
         ld = json.dumps({'@context': 'https://schema.org', '@type': 'BlogPosting', 'headline': p['title'], 'datePublished': p['iso'],
-                         'inLanguage': 'ro', 'url': url, 'author': {'@type': 'Person', 'name': 'Ioan Daniel Ionici', 'sameAs': [ORCID]}},
+                         'inLanguage': p.get('lang', 'ro'), 'url': url, 'author': {'@type': 'Person', 'name': 'Ioan Daniel Ionici', 'sameAs': [ORCID]}},
                         ensure_ascii=False)
         body = (f'<article class="post"><div class="hero"><p class="meta">{html.escape(p["series"])} · {p["date"]}</p>'
                 f'<h1>{html.escape(p["title"])}</h1><p class="role">{html.escape(p["subtitle"])}</p></div>'
-                f'<p class="src">Publicat inițial pe blogul „Un timp al lor”: <a href="{SUBSTACK}/p/{p["slug"]}">citiți pe Substack sau abonați-vă</a>.</p>'
+                + (f'<p class="src">Originally published on the blog “Un timp al lor”: <a href="{SUBSTACK}/p/{p["slug"]}">read on Substack or subscribe</a>.</p>'
+                   if p.get('lang') == 'en' else
+                   f'<p class="src">Publicat inițial pe blogul „Un timp al lor”: <a href="{SUBSTACK}/p/{p["slug"]}">citiți pe Substack sau abonați-vă</a>.</p>')
+                + 
                 f'{p["body"]}</article>')
         d = OUT / 'blog' / p['slug']
         d.mkdir(parents=True, exist_ok=True)
