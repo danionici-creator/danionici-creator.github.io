@@ -5,7 +5,12 @@ Each post body is read from the publication's RSS feed, so a post appears here o
 (scheduled posts are not in the feed), and saved in blog/cache/. Substack refuses the feed to GitHub's servers, so
 there the build uses the saved copies. Posts scheduled on Substack are kept encrypted in blog/sealed/ (see
 seal_posts.py) and are opened only once their publication time has passed, with the key in the BLOG_KEY environment
-variable, so they appear on schedule without anyone running anything. Run from the repository root:
+variable, so they appear on schedule without anyone running anything.
+
+Each text has a Romanian and an English version: an entry of posts.json names the other one in `pair`, and English
+entries have `lang: en`. A post page links its pair (a button under the subtitle, the header's language link and
+hreflang alternates) once the pair is public; /blog/ lists the Romanian posts and /blog/en/ the English ones. Run from
+the repository root:
 
     python tools/build_blog.py
 """
@@ -38,6 +43,8 @@ CLICKS = ('<script>document.addEventListener("click",function(e){var a=e.target.
           'goatcounter.count({path:a.href,title:a.textContent.trim().slice(0,80),event:true})})</script>')
 MONTHS = ['ianuarie', 'februarie', 'martie', 'aprilie', 'mai', 'iunie', 'iulie', 'august', 'septembrie',
           'octombrie', 'noiembrie', 'decembrie']
+MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October',
+             'November', 'December']
 
 try:
     from zoneinfo import ZoneInfo
@@ -117,9 +124,10 @@ def unseal(slug):
     return d if due <= datetime.now(timezone.utc) else None
 
 
-def ro_date(iso):
+def ro_date(iso, lang='ro'):
     d = datetime.fromisoformat(iso.replace('Z', '+00:00')).astimezone(TZ)
-    return f'{d.day} {MONTHS[d.month - 1]} {d.year}', d.date().isoformat()
+    month = (MONTHS_EN if lang == 'en' else MONTHS)[d.month - 1]
+    return f'{d.day} {month} {d.year}', d.date().isoformat()
 
 
 def css():
@@ -127,10 +135,23 @@ def css():
     return re.search(r'<style>(.*?)</style>', src, re.S).group(1)
 
 
-def page(title, desc, canon, body, depth, extra_head=''):
+def page(title, desc, canon, body, depth, extra_head='', lang='ro', switch=None):
+    """A page of the blog in Romanian or English. `switch` is the address of the same text in the other language
+    (the header's language link goes there instead of the other language's home page)."""
     up = '../' * depth
+    if lang == 'en':
+        nav = (f'<nav aria-label="Main"><a href="{up}index.html">Home</a><a href="{up}blog/en/index.html">Blog</a></nav>'
+               f'<a class="lang" href="{switch or up + "ro/index.html"}" hreflang="ro" lang="ro">Română</a>')
+        foot = (f'Ioan Daniel Ionici · Independent researcher, Oradea · <a href="{ORCID}">ORCID</a> · Texts: CC BY 4.0. '
+                f'Copy of the blog <a href="{SUBSTACK}">“Un timp al lor”</a>, where the posts appear first and where you can subscribe.')
+    else:
+        nav = (f'<nav aria-label="Principal"><a href="{up}ro/index.html">Acasă</a><a href="{up}blog/index.html">Blog</a>'
+               f'<a href="{up}series.html">Seria LLM</a></nav>'
+               f'<a class="lang" href="{switch or up + "index.html"}" hreflang="en" lang="en">English</a>')
+        foot = (f'Ioan Daniel Ionici · Cercetător independent, Oradea · <a href="{ORCID}">ORCID</a> · Texte: CC BY 4.0. '
+                f'Copie a blogului <a href="{SUBSTACK}">„Un timp al lor”</a>, unde articolele apar întâi și unde vă puteți abona.')
     return f'''<!doctype html>
-<html lang="ro">
+<html lang="{lang}">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(title)}</title>
@@ -139,13 +160,14 @@ def page(title, desc, canon, body, depth, extra_head=''):
 <meta property="og:title" content="{html.escape(title, quote=True)}"><meta property="og:description" content="{html.escape(desc, quote=True)}"><meta property="og:url" content="{canon}"><meta property="og:type" content="article">
 <style>{CSS}
 .post img{{max-width:100%;height:auto;border-radius:8px}}.post figure{{margin:20px 0}}.post blockquote{{border-left:3px solid var(--acc);margin:16px 0;padding:2px 16px;color:var(--mut)}}
-.src{{font:15px 'Segoe UI',Arial,sans-serif;background:var(--soft);border-radius:10px;padding:10px 14px}}</style>
+.src{{font:15px 'Segoe UI',Arial,sans-serif;background:var(--soft);border-radius:10px;padding:10px 14px}}
+.langbtn a{{display:inline-block;font:15px 'Segoe UI',Arial,sans-serif;border:1px solid var(--acc);border-radius:6px;padding:4px 12px;text-decoration:none}}</style>
 {extra_head}
 </head>
 <body>
-<header class="site"><div class="bar"><nav aria-label="Principal"><a href="{up}ro/index.html">Acasă</a><a href="{up}blog/index.html">Blog</a><a href="{up}series.html">Seria LLM</a></nav><a class="lang" href="{up}index.html" lang="en">English</a></div></header>
+<header class="site"><div class="bar">{nav}</div></header>
 <main>{body}</main>
-<footer><p>Ioan Daniel Ionici · Cercetător independent, Oradea · <a href="{ORCID}">ORCID</a> · Texte: CC BY 4.0. Copie a blogului <a href="{SUBSTACK}">„Un timp al lor”</a>, unde articolele apar întâi și unde vă puteți abona.</p></footer>
+<footer><p>{foot}</p></footer>
 </body></html>'''
 
 
@@ -209,38 +231,70 @@ def main():
         if not d or not d['body_html']:
             print('not public yet:', item['slug'])
             continue
-        human, iso = ro_date(d['post_date'])
+        human, iso = ro_date(d['post_date'], item.get('lang', 'ro'))
         body = clean(d['body_html'])
         # a heading that repeats the title would show it twice under the page's own h1
         body = re.sub(r'<h[2-4]>\s*' + re.escape(html.escape(d['title'], quote=False)) + r'\s*</h[2-4]>', '', body, count=1)
         posts.append(dict(item, title=d['title'], subtitle=d['subtitle'], date=human, iso=iso, ts=d['post_date'], body=body))
     posts.sort(key=lambda p: datetime.fromisoformat(p['ts'].replace('Z', '+00:00')), reverse=True)
+    public = {p['slug'] for p in posts}
     for p in posts:
+        en = p.get('lang') == 'en'
         url = f'{BASE}/blog/{p["slug"]}/'
         ld = json.dumps({'@context': 'https://schema.org', '@type': 'BlogPosting', 'headline': p['title'], 'datePublished': p['iso'],
                          'inLanguage': p.get('lang', 'ro'), 'url': url, 'author': {'@type': 'Person', 'name': 'Ioan Daniel Ionici', 'sameAs': [ORCID]}},
                         ensure_ascii=False)
+        head = f'<script type="application/ld+json">{ld}</script>'
+        # the same text in the other language, linked only once it is public (both appear at the same time)
+        pair = p.get('pair') if p.get('pair') in public else None
+        button = ''
+        if pair:
+            other = 'ro' if en else 'en'
+            head += (f'<link rel="alternate" hreflang="{p.get("lang", "ro")}" href="{url}">'
+                     f'<link rel="alternate" hreflang="{other}" href="{BASE}/blog/{pair}/">')
+            button = (f'<p class="langbtn"><a href="../{pair}/index.html" hreflang="ro" lang="ro">Versiunea în limba română →</a></p>' if en else
+                      f'<p class="langbtn"><a href="../{pair}/index.html" hreflang="en" lang="en">English version →</a></p>')
         body = (f'<article class="post"><div class="hero"><p class="meta">{html.escape(p["series"])} · {p["date"]}</p>'
                 f'<h1>{html.escape(p["title"])}</h1><p class="role">{html.escape(p["subtitle"])}</p></div>'
+                + button
                 + (f'<p class="src">Originally published on the blog “Un timp al lor”: <a href="{SUBSTACK}/p/{p["slug"]}">read on Substack or subscribe</a>.</p>'
-                   if p.get('lang') == 'en' else
+                   if en else
                    f'<p class="src">Publicat inițial pe blogul „Un timp al lor”: <a href="{SUBSTACK}/p/{p["slug"]}">citiți pe Substack sau abonați-vă</a>.</p>')
-                + 
-                f'{p["body"]}</article>')
+                + f'{p["body"]}</article>')
         d = OUT / 'blog' / p['slug']
         d.mkdir(parents=True, exist_ok=True)
-        (d / 'index.html').write_text(page(f'{p["title"]} · Un timp al lor', p['subtitle'] or p['title'], url, body, 2,
-                                           f'<script type="application/ld+json">{ld}</script>'), encoding='utf-8')
-    rows = ''.join(f'<article class="card"><p class="meta">{html.escape(p["series"])} · {p["date"]}</p>'
-                   f'<h3><a href="{p["slug"]}/index.html">{html.escape(p["title"])}</a></h3><p>{html.escape(p["subtitle"])}</p></article>'
-                   for p in posts)
+        (d / 'index.html').write_text(page(f'{p["title"]} · Un timp al lor', p['subtitle'] or p['title'], url, body, 2, head,
+                                           'en' if en else 'ro', f'../{pair}/index.html' if pair else None), encoding='utf-8')
+
+    def cards(lang, prefix):
+        out = ''
+        for p in posts:
+            if (p.get('lang') == 'en') != (lang == 'en'):
+                continue
+            pair = p.get('pair') if p.get('pair') in public else None
+            alt = (f' · <a href="{prefix}{pair}/index.html" hreflang="ro" lang="ro">Română</a>' if lang == 'en' else
+                   f' · <a href="{prefix}{pair}/index.html" hreflang="en" lang="en">English</a>') if pair else ''
+            out += (f'<article class="card"><p class="meta">{html.escape(p["series"])} · {p["date"]}{alt}</p>'
+                    f'<h3><a href="{prefix}{p["slug"]}/index.html">{html.escape(p["title"])}</a></h3><p>{html.escape(p["subtitle"])}</p></article>')
+        return out
+
     idx = (f'<div class="hero"><h1>Un timp al lor</h1><p class="role">Blog de popularizare științifică, în limba română</p></div>'
            f'<section><p>Articolele blogului „Un timp al lor”, copiate aici după ce apar pe <a href="{SUBSTACK}">Substack</a>, '
-           f'unde vă puteți abona ca să le primiți prin email. Cele mai noi sunt primele.</p>{rows}</section>')
+           f'unde vă puteți abona ca să le primiți prin email. Cele mai noi sunt primele. Fiecare text are și o versiune în engleză: '
+           f'<a href="en/index.html" hreflang="en" lang="en">English versions</a>.</p>{cards("ro", "")}</section>')
     (OUT / 'blog').mkdir(exist_ok=True)
+    alt_idx = (f'<link rel="alternate" hreflang="ro" href="{BASE}/blog/"><link rel="alternate" hreflang="en" href="{BASE}/blog/en/">')
     (OUT / 'blog' / 'index.html').write_text(page('Blog · Un timp al lor', 'Articolele blogului „Un timp al lor”: popularizare științifică despre inteligența artificială, timp și memorie.',
-                                                  f'{BASE}/blog/', idx, 1), encoding='utf-8')
-    urls = [f'{BASE}/', f'{BASE}/ro/', f'{BASE}/series.html', f'{BASE}/blog/'] + [f'{BASE}/blog/{p["slug"]}/' for p in posts]
+                                                  f'{BASE}/blog/', idx, 1, alt_idx, 'ro', 'en/index.html'), encoding='utf-8')
+    idx_en = (f'<div class="hero"><h1>Un timp al lor</h1><p class="role">A popular-science blog, in English versions</p></div>'
+              f'<section><p>English versions of the posts of the blog “Un timp al lor” (Romanian for “A time of their own”), which is written in Romanian. '
+              f'They are copied here once they appear on <a href="{SUBSTACK}">Substack</a>. Newest first. '
+              f'The Romanian originals: <a href="../index.html" hreflang="ro" lang="ro">Blog în română</a>.</p>{cards("en", "../")}</section>')
+    (OUT / 'blog' / 'en').mkdir(exist_ok=True)
+    (OUT / 'blog' / 'en' / 'index.html').write_text(page('Blog in English · Un timp al lor', 'English versions of the posts of the blog “Un timp al lor”: popular science on artificial intelligence, time and memory.',
+                                                         f'{BASE}/blog/en/', idx_en, 2, alt_idx, 'en', '../index.html'), encoding='utf-8')
+    urls = ([f'{BASE}/', f'{BASE}/ro/', f'{BASE}/series.html', f'{BASE}/blog/', f'{BASE}/blog/en/']
+            + [f'{BASE}/blog/{p["slug"]}/' for p in posts])
     (OUT / 'sitemap.xml').write_text('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
                                      + ''.join(f'  <url><loc>{u}</loc></url>\n' for u in urls) + '</urlset>\n', encoding='utf-8')
     name_site()

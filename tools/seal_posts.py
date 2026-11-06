@@ -3,7 +3,8 @@ repository does not show it before its date. build_blog.py opens a sealed post o
 passed, with the key from the BLOG_KEY environment variable (a GitHub Actions secret).
 
 Input: a JSON list exported from the Substack editor (/api/v1/drafts/<id>): slug, trigger_at, title, subtitle and
-body (the editor's ProseMirror document). Run locally, from the repository root:
+body (the editor's ProseMirror document), or body_html instead of body for a post that is already HTML. Run locally,
+from the repository root:
 
     python tools/seal_posts.py drafts.json path/to/key.txt
 
@@ -66,8 +67,9 @@ def main(drafts, keyfile):
     out = ROOT / 'blog' / 'sealed'
     out.mkdir(exist_ok=True)
     for d in json.loads(Path(drafts).read_text(encoding='utf-8')):
+        # an entry may carry the post already as HTML (a sealed copy updated in place) instead of the editor's document
         post = {'title': d['title'], 'subtitle': d['subtitle'], 'post_date': d['trigger_at'],
-                'body_html': to_html(json.loads(d['body']), d['title'])}
+                'body_html': d['body_html'] if 'body_html' in d else to_html(json.loads(d['body']), d['title'])}
         (out / f'{d["slug"]}.bin').write_bytes(f.encrypt(json.dumps(post, ensure_ascii=False).encode('utf-8')))
         print('sealed', d['slug'], d['trigger_at'])
 
